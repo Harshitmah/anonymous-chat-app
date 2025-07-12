@@ -71,7 +71,7 @@ npm install express body-parser socket.io http bcrypt
 node index.js
 ```
 
-Then open [)](https://anonymous-chat-application.netlify.app/) in your browser.
+Then open [https://anonymous-chat-application.netlify.app/](https://anonymous-chat-application.netlify.app/) in your browser.
 
 ---
 
