@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat App</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="chat-container">
+    <ul id="messages"></ul>
+    <form id="form">
+      <input id="input" autocomplete="off" placeholder="Type a message..." />
+      <button>Send</button>
+    </form>
+  </div>
+  <div style="display: flex; gap: 20px;"></div>
+    <!-- <ul id="messages" style="flex: 3; min-height: 300px; border: 1px solid #bd0000; padding: 10px; background: #fafafa; overflow-y: auto; list-style: none;"></ul> -->
+    <div style="flex: 1; border-left: 1px solid gray; padding-left: 10px;">
+      <h4>Online Users</h4>
+      <ul id="users" style="list-style: none; padding: 0; margin: 0;"></ul>
+      <button id="refresh-users" style="margin-top: 10px;">Refresh List</button>
+      <div style="margin-top: 15px;">
+        <label for="user-filter">Filter:</label>
+        <input id="user-filter" type="text" placeholder="Search user..." style="width: 90%;" />
+      </div>
+    </div>
+  </div>
+  <script>
+    // Refresh users list on button click
+    document.getElementById('refresh-users').addEventListener('click', () => {
+      socket.emit('request user list');
+    });
+
+    // Filter users in the users list
+    document.getElementById('user-filter').addEventListener('input', function() {
+      const filter = this.value.toLowerCase();
+      Array.from(document.querySelectorAll('#users li')).forEach(li => {
+        li.style.display = li.textContent.toLowerCase().includes(filter) ? '' : 'none';
+      });
+    });
+  </script>
+  <select id="room-select">
+    <option value="General">General</option>
+    <option value="Sports">Sports</option>
+    <option value="Gaming">Gaming</option>
+  </select>
+  <div>
+    <label for="private-to">Private to:</label>
+    <select id="private-to">
+      <option value="">--none--</option>
+    </select>
+  </div>
+  <div>
+    <label for="group-name">Create Group:</label>
+    <input id="group-name" placeholder="Group name" />
+    <input id="user-search" placeholder="Search users..." />
+    <div id="user-checkboxes"></div>
+    <button id="create-group">Create Group</button>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+  const socket = io();
+  const form = document.getElementById('form');
+  const input = document.getElementById('input');
+  const messages = document.getElementById('messages');
+  const users = document.getElementById('users');
+  const privateTo = document.getElementById('private-to');
+  const groupNameInput = document.getElementById('group-name');
+  const userSearch = document.getElementById('user-search');
+  const userCheckboxes = document.getElementById('user-checkboxes');
+  const createGroupBtn = document.getElementById('create-group');
+
+  const username = prompt("Enter your name") || "Anonymous";
+
+  const roomSelect = document.getElementById('room-select');
+let room = roomSelect.value;
+
+roomSelect.addEventListener('change', () => {
+  room = roomSelect.value;
+  socket.emit('join room', room);
+});
+
+socket.emit('join room', room); // join default on load
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (input.value) {
+    socket.emit('chat message', {
+      room,
+      message: `${username}: ${input.value}`
+    });
+    input.value = '';
+  }
+});
+  socket.emit('register user', username);
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (input.value) {
+      socket.emit('chat message', `${username}: ${input.value}`);
+      input.value = '';
+    }
+  });
+
+  let unreadCount = 0;
+  let windowFocused = true;
+  const originalTitle = document.title;
+
+  window.addEventListener('focus', () => {
+    windowFocused = true;
+    unreadCount = 0;
+    document.title = originalTitle;
+  });
+  window.addEventListener('blur', () => {
+    windowFocused = false;
+  });
+
+  function notifyNewMessage() {
+    if (!windowFocused) {
+      unreadCount++;
+      document.title = `(${unreadCount}) New message - ${originalTitle}`;
+    }
+  }
+
+  socket.on('chat message', (msg) => {
+    const item = document.createElement('li');
+    item.textContent = msg;
+    messages.appendChild(item);
+    notifyNewMessage();
+  });
+
+  let allUsers = [];
+  let selectedUsers = [];
+
+  // Update user checkboxes for group creation
+  function updateUserCheckboxes(filter = '') {
+    userCheckboxes.innerHTML = '';
+    allUsers.filter(u => u !== username && u.toLowerCase().includes(filter.toLowerCase())).forEach(u => {
+      const label = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = u;
+      cb.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          selectedUsers.push(u);
+        } else {
+          selectedUsers = selectedUsers.filter(name => name !== u);
+        }
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(u));
+      userCheckboxes.appendChild(label);
+      userCheckboxes.appendChild(document.createElement('br'));
+    });
+  }
+
+  userSearch.addEventListener('input', (e) => {
+    updateUserCheckboxes(e.target.value);
+  });
+
+  createGroupBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const group = groupNameInput.value.trim();
+    if (group && selectedUsers.length > 0) {
+      socket.emit('create group', { group, members: [username, ...selectedUsers] });
+      roomSelect.innerHTML += `<option value="${group}">${group}</option>`;
+      roomSelect.value = group;
+      room = group;
+      socket.emit('join room', group);
+      groupNameInput.value = '';
+      selectedUsers = [];
+      updateUserCheckboxes(userSearch.value);
+    }
+  });
+
+  socket.on('user list', (userList) => {
+    allUsers = userList;
+    users.innerHTML = '';
+    privateTo.innerHTML = '<option value="">--none--</option>';
+    userList.forEach(u => {
+      const item = document.createElement('li');
+      item.textContent = u;
+      users.appendChild(item);
+      if (u !== username) {
+        const opt = document.createElement('option');
+        opt.value = u;
+        opt.textContent = u;
+        privateTo.appendChild(opt);
+      }
+    });
+    updateUserCheckboxes(userSearch.value);
+  });
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (input.value) {
+      if (privateTo.value) {
+        socket.emit('private message', {
+          to: privateTo.value,
+          message: `(private) ${username}: ${input.value}`
+        });
+        const item = document.createElement('li');
+        item.textContent = `(private to ${privateTo.value}) ${username}: ${input.value}`;
+        messages.appendChild(item);
+      } else {
+        socket.emit('chat message', {
+          room,
+          message: `${username}: ${input.value}`
+        });
+      }
+      input.value = '';
+    }
+  });
+
+  socket.on('private message', ({ from, message }) => {
+    const item = document.createElement('li');
+    item.textContent = `(private from ${from}) ${message}`;
+    messages.appendChild(item);
+    notifyNewMessage();
+  });
+</script>
+
+
+
+</body>
+</html>
